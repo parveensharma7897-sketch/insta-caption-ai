@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <title>Instagram AI Caption Generator (English + Hinglish + Hindi) | Dark UI</title>
+  <meta name="description" content="Upload a photo and generate Instagram captions in English, Hinglish, and Hindi—Trending, Funny, Emotional, Motivational, and Short & Viral styles. Mobile-friendly dark UI with one-tap copy." />
+  <meta name="keywords" content="instagram caption generator, ai captions, hinglish captions, hindi captions, trending instagram captions, funny captions" />
+  <link rel="canonical" href="https://example.com/" />
+  <!-- Open Graph -->
+  <meta property="og:title" content="Instagram AI Caption Generator" />
+  <meta property="og:description" content="Upload a photo → get 5 caption styles in English + Hinglish + Hindi. Copy in one tap." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://example.com/" />
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Instagram AI Caption Generator" />
+  <meta name="twitter:description" content="Generate IG captions in English + Hinglish + Hindi (5 styles)." />
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <!-- React (CDN) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    :root{ color-scheme: dark; }
+    body{
+      background:
+        radial-gradient(1200px 600px at 10% -10%, rgba(99,102,241,.30), transparent 55%),
+        radial-gradient(1000px 500px at 110% 0%, rgba(236,72,153,.18), transparent 45%),
+        radial-gradient(900px 600px at 50% 110%, rgba(34,197,94,.10), transparent 50%),
+        #070A12;
+    }
+    .glass{
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow: 0 20px 60px rgba(0,0,0,.55);
+      backdrop-filter: blur(12px);
+    }
+    .shimmer{
+      background: linear-gradient(90deg, rgba(255,255,255,.06) 0%, rgba(255,255,255,.12) 50%, rgba(255,255,255,.06) 100%);
+      background-size: 200% 100%;
+      animation: shimmer 1.2s infinite;
+    }
+    @keyframes shimmer{ 0%{ background-position: 200% 0; } 100%{ background-position: -200% 0; } }
+    .focus-ring:focus{ outline: none; box-shadow: 0 0 0 3px rgba(99,102,241,.35); }
+  </style>
+  <!-- Structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Instagram AI Caption Generator",
+    "applicationCategory": "MultimediaApplication",
+    "operatingSystem": "Web",
+    "description": "Upload an image and generate Instagram captions in English, Hinglish, and Hindi across 5 styles.",
+    "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}
+  }
+  </script>
+</head>
+<body class="text-zinc-100 antialiased">
+  <a class="sr-only focus:not-sr-only focus:ring-2 focus:ring-indigo-500 focus:outline-none p-2" href="#app">Skip to app</a>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useMemo, useRef, useState } = React;
+    function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+    function randInt(min, max){ return Math.floor(Math.random() * (max - min + 1)) + min; }
+    function choose(arr){ return arr[Math.floor(Math.random() * arr.length)]; }
+    function formatRgbToHex(r,g,b){
+      const toHex = (v)=>v.toString(16).padStart(2,'0');
+      return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
+    }
+    function colorNameFromRgb(r,g,b){
+      // Simple heuristic color naming for UI flavor.
+      const max = Math.max(r,g,b);
+      const min = Math.min(r,g,b);
+      const delta = max - min;
+      const brightness = (r+g+b)/3;
+      if (brightness < 45) return 'midnight';
+      if (brightness > 210 && delta < 25) return 'snow';
+      if (delta < 18) return brightness > 120 ? 'silver' : 'charcoal';
+      if (max === r && g > 140) return 'sunset';
+      if (max === r) return 'rose';
+      if (max === g) return 'emerald';
+      if (max === b) return 'ocean';
+      return 'vibe';
+    }
+    async function analyzeImage(file){
+      // Lightweight client-side analysis: orientation + average color + brightness.
+      const imgUrl = URL.createObjectURL(file);
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.src = imgUrl;
+      await new Promise((res, rej)=>{
+        img.onload = res;
+        img.onerror = rej;
+      });
+      const w = img.naturalWidth || img.width;
+      const h = img.naturalHeight || img.height;
+      const orientation = w >= h ? 'landscape' : 'portrait';
+      const canvas = document.createElement('canvas');
+      // Downsample to speed up.
+      const target = 64;
+      const scale = Math.min(target / w, target / h);
+      canvas.width = Math.max(16, Math.round(w * scale));
+      canvas.height = Math.max(16, Math.round(h * scale));
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const { data } = ctx.getImageData(0,0,canvas.width, canvas.height);
+      let r=0,g=0,b=0;
+      for(let i=0;i<data.length;i+=4){
+        r += data[i];
+        g += data[i+1];
+        b += data[i+2];
+      }
+      const px = data.length / 4;
+      r = Math.round(r/px); g = Math.round(g/px); b = Math.round(b/px);
+      const brightness = Math.round((r+g+b)/3);
+      const vibe = brightness > 150 ? 'bright' : brightness < 85 ? 'moody' : 'balanced';
+      const colorName = colorNameFromRgb(r,g,b);
+      const hex = formatRgbToHex(r,g,b);
+      URL.revokeObjectURL(imgUrl);
+      return { orientation, brightness, vibe, avgRgb: {r,g,b}, avgHex: hex, colorName };
+    }
+    function buildCaptions({analysis, userHint}){
+      const { vibe, orientation, colorName, avgHex } = analysis;
+      const hint = (userHint || '').trim();
+      const hintFragment = hint ? hint : null;
+      // Tone anchors
+      const scene = choose([
+        'city lights', 'golden hour', 'coffee run', 'weekend mood', 'soft chaos',
+        'street style', 'travel diaries', 'gym time', 'work mode', 'slow living'
+      ]);
+      const vibeWord = vibe === 'bright' ? choose(['glow', 'shine', 'sunlit'])
+        : vibe === 'moody' ? choose(['midnight', 'stormy', 'lowkey'])
+        : choose(['clean', 'calm', 'easy']);
+      const orientWord = orientation === 'portrait' ? choose(['main character energy', 'close-up vibes']) : choose(['wide-angle dreams', 'big scene energy']);
+      const colorWord = colorName;
+      // Helpers for multilingual lines
+      const en = (s)=>s;
+      const hi = (s)=>s; // Hindi string
+      const hl = (s)=>s; // Hinglish string
+      const topic = hintFragment ? hintFragment : `${scene}`;
+      const microTag = choose(['#reels', '#instadaily', '#aesthetic', '#pov', '#vibes', '#mood']);
+      const templates = {
+        trending: {
+          label: 'Trending',
+          icon: '🔥',
+          make: ()=>({
+            en: en(`${vibeWord} ${topic}. ${orientWord}. ${microTag}`),
+            hinglish: hl(`${vibeWord} ${topic}. Bas vibes on. ${microTag}`),
+            hindi: hi(`${topic} ka ${vibeWord} mood. बस vibes on. ${microTag}`)
+          })
+        },
+        funny: {
+          label: 'Funny',
+          icon: '😂',
+          make: ()=>({
+            en: en(`I came for the photo… stayed for the ${colorWord} vibe. (${avgHex})`),
+            hinglish: hl(`Main photo ke liye aaya tha… vibe ne rok liya. (${avgHex})`),
+            hindi: hi(`मैं फोटो के लिए आया था… vibe ने रोक लिया। (${avgHex})`)
+          })
+        },
+        emotional: {
+          label: 'Emotional',
+          icon: '💛',
+          make: ()=>({
+            en: en(`${topic}—a reminder that small moments still feel big.`),
+            hinglish: hl(`${topic}—kabhi kabhi chhoti cheezein hi sabse zyada feel hoti hain.`),
+            hindi: hi(`${topic}—कभी-कभी छोटे पल ही सबसे बड़े लगते हैं।`)
+          })
+        },
+        motivational: {
+          label: 'Motivational',
+          icon: '⚡',
+          make: ()=>({
+            en: en(`New day. Same goals. Higher standards. Let it ${vibe === 'bright' ? 'shine' : 'build'}.`),
+            hinglish: hl(`Naya din. Wahi goals. Standards aur high. Bas lage raho.`),
+            hindi: hi(`नया दिन। वही लक्ष्य। मानक और ऊँचे। बस लगे रहो।`)
+          })
+        },
+        shortViral: {
+          label: 'Short & Viral',
+          icon: '🚀',
+          make: ()=>({
+            en: en(`${vibeWord}. That’s it.`),
+            hinglish: hl(`${vibeWord}. Bas.`),
+            hindi: hi(`${vibeWord}. बस।`)
+          })
+        }
+      };
+      // Generate and lightly randomize endings
+      const endings = [
+        '',
+        ' ✨',
+        ' — no filter.',
+        ' (save this)',
+        ' • ${microTag}'
+      ];
+      function finalize(obj){
+        const end = choose(endings);
+        const add = end.includes('${microTag}') ? end.replace('${microTag}', microTag) : end;
+        return {
+          en: obj.en + add,
+          hinglish: obj.hinglish + add,
+          hindi: obj.hindi + add
+        };
+      }
+      const out = [
+        { key: 'trending', ...templates.trending, text: finalize(templates.trending.make()) },
+        { key: 'funny', ...templates.funny, text: finalize(templates.funny.make()) },
+        { key: 'emotional', ...templates.emotional, text: finalize(templates.emotional.make()) },
+        { key: 'motivational', ...templates.motivational, text: finalize(templates.motivational.make()) },
+        { key: 'shortViral', ...templates.shortViral, text: finalize(templates.shortViral.make()) },
+      ];
+      return out;
+    }
+    function Toast({toast}){
+      return (
+        <div className={`fixed left-1/2 -translate-x-1/2 bottom-5 z-50 transition-all duration-300 ${toast ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}`}>
+          <div className="glass rounded-xl px-4 py-2 text-sm text-zinc-100">
+            {toast || ''}
+          </div>
+        </div>
+      );
+    }
+    function Badge({children}){
+      return (
+        <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-200">
+          {children}
+        </span>
+      );
+    }
+    function Stepper({stepLabel, progress}){
+      return (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs text-zinc-400">
+            <span>{stepLabel}</span>
+            <span>{progress}%</span>
+          </div>
+          <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden border border-white/10">
+            <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-fuchsia-500 to-rose-500" style={{width: `${progress}%`}} />
+          </div>
+        </div>
+      );
+    }
+    function CaptionCard({item, onCopy}){
+      const combined = `${item.text.en}\n\nHinglish: ${item.text.hinglish}\nHindi: ${item.text.hindi}`;
+      return (
+        <div className="glass rounded-2xl p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="text-lg" aria-hidden>{item.icon}</div>
+                <h3 className="font-semibold text-zinc-100">{item.label}</h3>
+              </div>
+              <p className="mt-1 text-xs text-zinc-400">English + Hinglish + Hindi</p>
+            </div>
+            <button
+              onClick={()=>onCopy(combined)}
+              className="focus-ring inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-zinc-100 hover:bg-white/10 active:scale-[0.99] transition"
+              aria-label={`Copy ${item.label} caption`}
+              title="Copy"
+            >
+              <span className="select-none">Copy</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="opacity-90">
+                <path d="M9 9h10v10H9V9Z" stroke="currentColor" strokeWidth="1.6"/>
+                <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" stroke="currentColor" strokeWidth="1.6"/>
+              </svg>
+            </button>
+          </div>
+          <div className="mt-4 space-y-3">
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+              <div className="text-xs text-zinc-400">English</div>
+              <div className="mt-1 text-sm leading-relaxed text-zinc-100 whitespace-pre-wrap">{item.text.en}</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+              <div className="text-xs text-zinc-400">Hinglish</div>
+              <div className="mt-1 text-sm leading-relaxed text-zinc-100 whitespace-pre-wrap">{item.text.hinglish}</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+              <div className="text-xs text-zinc-400">Hindi</div>
+              <div className="mt-1 text-sm leading-relaxed text-zinc-100 whitespace-pre-wrap">{item.text.hindi}</div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    function SkeletonCard(){
+      return (
+        <div className="glass rounded-2xl p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-2 w-full">
+              <div className="h-4 w-32 rounded shimmer"></div>
+              <div className="h-3 w-44 rounded shimmer opacity-70"></div>
+            </div>
+            <div className="h-9 w-20 rounded-xl shimmer"></div>
+          </div>
+          <div className="mt-4 space-y-3">
+            <div className="h-20 rounded-xl shimmer"></div>
+            <div className="h-20 rounded-xl shimmer opacity-90"></div>
+            <div className="h-20 rounded-xl shimmer opacity-80"></div>
+          </div>
+        </div>
+      );
+    }
+    function App(){
+      const [file, setFile] = useState(null);
+      const [previewUrl, setPreviewUrl] = useState(null);
+      const [userHint, setUserHint] = useState('');
+      const [error, setError] = useState('');
+      const [analysis, setAnalysis] = useState(null);
+      const [captions, setCaptions] = useState(null);
+      const [loading, setLoading] = useState(false);
+      const [stepLabel, setStepLabel] = useState('');
+      const [progress, setProgress] = useState(0);
+      const [toast, setToast] = useState('');
+      const toastTimer = useRef(null);
+      useEffect(()=>{
+        return ()=>{
+          if (previewUrl) URL.revokeObjectURL(previewUrl);
+          if (toastTimer.current) clearTimeout(toastTimer.current);
+        };
+      }, [previewUrl]);
+      function showToast(msg){
+        setToast(msg);
+        if (toastTimer.current) clearTimeout(toastTimer.current);
+        toastTimer.current = setTimeout(()=>setToast(''), 1800);
+      }
+      async function onCopy(text){
+        try{
+          await navigator.clipboard.writeText(text);
+          showToast('Copied to clipboard');
+        } catch (e){
+          // Fallback
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          showToast('Copied');
+        }
+      }
+      function validateAndSetFile(f){
+        setError('');
+        if (!f) return;
+        const okTypes = ['image/jpeg','image/png'];
+        if (!okTypes.includes(f.type)){
+          setError('Please upload a JPG or PNG image.');
+          return;
+        }
+        if (f.size > 12 * 1024 * 1024){
+          setError('Image is too large. Please use a file under 12MB.');
+          return;
+        }
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        const url = URL.createObjectURL(f);
+        setFile(f);
+        setPreviewUrl(url);
+        setAnalysis(null);
+        setCaptions(null);
+      }
+      function onFileChange(e){
+        validateAndSetFile(e.target.files?.[0]);
+      }
+      function onDrop(e){
+        e.preventDefault();
+        e.stopPropagation();
+        const f = e.dataTransfer.files?.[0];
+        validateAndSetFile(f);
+      }
+      function onDragOver(e){
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      async function generate(){
+        if (!file){
+          setError('Upload an image to generate captions.');
+          return;
+        }
+        setError('');
+        setCaptions(null);
+        setLoading(true);
+        const steps = [
+          { label: 'Uploading image to AI…', target: 18 },
+          { label: 'Analyzing visual elements…', target: 45 },
+          { label: 'Extracting vibe & context…', target: 62 },
+          { label: 'Writing captions in 3 languages…', target: 84 },
+          { label: 'Finalizing caption styles…', target: 100 }
+        ];
+        const totalMs = randInt(5200, 9800); // 5–10 seconds
+        const start = performance.now();
+        let stepIndex = 0;
+        setStepLabel(steps[0].label);
+        setProgress(0);
+        // Do actual lightweight analysis quickly, but keep UI within requested window.
+        let analysisResult;
+        try{
+          analysisResult = await analyzeImage(file);
+          setAnalysis(analysisResult);
+        } catch (e){
+          console.error(e);
+          setLoading(false);
+          setError('Could not read this image. Please try a different file.');
+          return;
+        }
+        await new Promise((resolve)=>{
+          const tick = ()=>{
+            const elapsed = performance.now() - start;
+            const t = clamp(elapsed / totalMs, 0, 1);
+            // advance step
+            const currentTarget = steps[stepIndex].target;
+            const nextStepAt = (stepIndex+1) / steps.length;
+            if (t >= nextStepAt && stepIndex < steps.length - 1){
+              stepIndex++;
+              setStepLabel(steps[stepIndex].label);
+            }
+            // Easing progress up to current step target
+            const p = Math.round(t * 100);
+            const eased = Math.min(p, currentTarget);
+            setProgress(eased);
+            if (t >= 1){
+              setProgress(100);
+              resolve();
+              return;
+            }
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        });
+        // “API response”
+        const result = buildCaptions({ analysis: analysisResult, userHint });
+        setCaptions(result);
+        setLoading(false);
+        showToast('Captions ready');
+      }
+      const analysisBadges = useMemo(()=>{
+        if (!analysis) return null;
+        const vibeLabel = analysis.vibe === 'bright' ? 'Bright vibe' : analysis.vibe === 'moody' ? 'Moody vibe' : 'Balanced vibe';
+        return (
+          <div className="flex flex-wrap gap-2">
+            <Badge>AI: {vibeLabel}</Badge>
+            <Badge>Orientation: {analysis.orientation}</Badge>
+            <Badge>
+              Avg color: <span className="inline-flex items-center gap-2">
+                <span className="inline-block h-3 w-3 rounded" style={{background: analysis.avgHex}} aria-hidden></span>
+                <span className="font-mono">{analysis.avgHex}</span>
+              </span>
+            </Badge>
+          </div>
+        );
+      }, [analysis]);
+      return (
+        <div id="app" className="min-h-dvh">
+          <Toast toast={toast} />
+          {/* Top nav */}
+          <header className="sticky top-0 z-40 border-b border-white/10 bg-black/20 backdrop-blur">
+            <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-rose-500" />
+                <div>
+                  <div className="text-sm font-semibold leading-tight">IG AI Caption Generator</div>
+                  <div className="text-xs text-zinc-400 leading-tight">English • Hinglish • Hindi</div>
+                </div>
+              </div>
+              <div className="hidden sm:flex items-center gap-2">
+                <a className="text-xs text-zinc-300 hover:text-white" href="#how">How it works</a>
+                <span className="text-white/20">•</span>
+                <a className="text-xs text-zinc-300 hover:text-white" href="#faq">FAQ</a>
+              </div>
+            </div>
+          </header>
+          <main className="mx-auto max-w-6xl px-4 py-10 sm:py-14">
+            {/* Hero */}
+            <section className="grid lg:grid-cols-2 gap-8 items-start">
+              <div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge>5 caption styles</Badge>
+                  <Badge>One-tap copy</Badge>
+                  <Badge>Mobile-first dark UI</Badge>
+                </div>
+                <h1 className="mt-5 text-3xl sm:text-5xl font-semibold tracking-tight">
+                  Generate Instagram captions with AI
+                  <span className="block text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-fuchsia-400 to-rose-400">in English, Hinglish & Hindi</span>
+                </h1>
+                <p className="mt-4 text-zinc-300 max-w-xl">
+                  Upload a JPG/PNG, let the AI analyze the vibe, and get 5 ready-to-post caption styles in ~5–10 seconds.
+                </p>
+                <div className="mt-6 flex flex-col sm:flex-row gap-3">
+                  <a href="#generator" className="focus-ring inline-flex items-center justify-center rounded-2xl bg-white text-black px-5 py-3 text-sm font-semibold hover:bg-zinc-200 transition">
+                    Try the generator
+                  </a>
+                  <a href="#how" className="focus-ring inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-zinc-100 hover:bg-white/10 transition">
+                    See how it works
+                  </a>
+                </div>
+                <div className="mt-7 text-xs text-zinc-400">
+                  Privacy note: This demo runs in your browser and simulates an API-like AI workflow.
+                </div>
+              </div>
+              {/* Generator card */}
+              <div id="generator" className="glass rounded-3xl p-4 sm:p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-semibold">Caption Generator</h2>
+                    <p className="mt-1 text-sm text-zinc-400">Upload → Preview → Generate → Copy</p>
+                  </div>
+                  <div className="hidden sm:flex items-center gap-2 text-xs text-zinc-400">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400"></span>
+                      AI ready
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-4">
+                  <div
+                    className="rounded-2xl border border-dashed border-white/15 bg-black/20 p-4"
+                    onDrop={onDrop}
+                    onDragOver={onDragOver}
+                    role="group"
+                    aria-label="Upload image"
+                  >
+                    <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+                      <div>
+                        <div className="text-sm font-medium">Upload an image</div>
+                        <div className="mt-1 text-xs text-zinc-400">JPG or PNG • up to 12MB • drag & drop supported</div>
+                      </div>
+                      <label className="focus-ring inline-flex cursor-pointer items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-100 hover:bg-white/10 transition">
+                        <input className="hidden" type="file" accept="image/jpeg,image/png" onChange={onFileChange} />
+                        Choose file
+                      </label>
+                    </div>
+                    {error && (
+                      <div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+                        {error}
+                      </div>
+                    )}
+                    {previewUrl ? (
+                      <div className="mt-4 grid sm:grid-cols-[140px_1fr] gap-4 items-start">
+                        <div className="relative">
+                          <img
+                            src={previewUrl}
+                            alt="Image preview"
+                            className="w-full h-36 sm:h-32 object-cover rounded-2xl border border-white/10"
+                          />
+                        </div>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="text-xs text-zinc-400" htmlFor="hint">Optional: add context (helps captions)</label>
+                            <input
+                              id="hint"
+                              className="focus-ring mt-1 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-500"
+                              placeholder="e.g., birthday brunch with friends, solo travel, new haircut…"
+                              value={userHint}
+                              onChange={(e)=>setUserHint(e.target.value)}
+                              maxLength={90}
+                            />
+                          </div>
+                          {analysis ? (
+                            <div className="space-y-2">
+                              <div className="text-xs text-zinc-400">AI image analysis</div>
+                              {analysisBadges}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-zinc-500">Analysis appears after you generate captions.</div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-4 text-xs text-zinc-500">Tip: Choose a clear photo for best results.</div>
+                    )}
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <button
+                      onClick={generate}
+                      disabled={loading}
+                      className={`focus-ring inline-flex items-center justify-center rounded-2xl px-5 py-3 text-sm font-semibold transition ${loading ? 'bg-white/10 text-zinc-400 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-500 via-fuchsia-500 to-rose-500 text-white hover:opacity-95'}`}
+                    >
+                      {loading ? 'Generating…' : 'Generate captions'}
+                    </button>
+                    <button
+                      onClick={()=>{ setFile(null); setCaptions(null); setAnalysis(null); setUserHint(''); setError(''); if (previewUrl){ URL.revokeObjectURL(previewUrl); setPreviewUrl(null);} }}
+                      className="focus-ring inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-zinc-100 hover:bg-white/10 transition"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                  {loading && (
+                    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold">AI is working</div>
+                          <div className="mt-1 text-xs text-zinc-400">Usually takes 5–10 seconds</div>
+                        </div>
+                        <div className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center">
+                          <div className="h-5 w-5 rounded-full border-2 border-white/20 border-t-white animate-spin" aria-label="Loading"></div>
+                        </div>
+                      </div>
+                      <div className="mt-4">
+                        <Stepper stepLabel={stepLabel} progress={progress} />
+                      </div>
+                      <div className="mt-4 grid md:grid-cols-2 gap-3">
+                        {[0,1,2,3].map(i=>(<SkeletonCard key={i} />))}
+                      </div>
+                    </div>
+                  )}
+                  {captions && !loading && (
+                    <div className="space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold">Your captions</div>
+                          <div className="text-xs text-zinc-400">Tap Copy on any style</div>
+                        </div>
+                        <button
+                          onClick={generate}
+                          className="focus-ring inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-100 hover:bg-white/10 transition"
+                        >
+                          Regenerate
+                        </button>
+                      </div>
+                      <div className="grid lg:grid-cols-2 gap-4">
+                        {captions.map(item => (
+                          <CaptionCard key={item.key} item={item} onCopy={onCopy} />
+                        ))}
+                      </div>
+                      <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                        <div className="text-sm font-semibold">Pro tip</div>
+                        <div className="mt-1 text-sm text-zinc-300">
+                          Want captions that match your exact post? Add a short hint (location / occasion / mood) and regenerate.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+            {/* How it works */}
+            <section id="how" className="mt-12 sm:mt-16">
+              <div className="flex items-end justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl sm:text-3xl font-semibold">How it works</h2>
+                  <p className="mt-2 text-zinc-300 max-w-2xl">
+                    This app mimics a modern React/Next.js + API workflow: you upload an image, an AI analyzes it, and captions are generated in multiple styles.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-6 grid md:grid-cols-3 gap-4">
+                <div className="glass rounded-2xl p-5">
+                  <div className="text-sm font-semibold">1) Upload</div>
+                  <p className="mt-2 text-sm text-zinc-300">Pick a JPG/PNG and preview it instantly before generation.</p>
+                </div>
+                <div className="glass rounded-2xl p-5">
+                  <div className="text-sm font-semibold">2) Analyze</div>
+                  <p className="mt-2 text-sm text-zinc-300">AI reads the vibe (brightness, colors, orientation) and builds context.</p>
+                </div>
+                <div className="glass rounded-2xl p-5">
+                  <div className="text-sm font-semibold">3) Generate + Copy</div>
+                  <p className="mt-2 text-sm text-zinc-300">Get 5 caption styles in English, Hinglish, and Hindi—copy with one tap.</p>
+                </div>
+              </div>
+              <div className="mt-6 glass rounded-2xl p-5">
+                <div className="text-sm font-semibold">Backend/API note (for production)</div>
+                <p className="mt-2 text-sm text-zinc-300">
+                  In a real Next.js app, you’d send the image to an API route (or serverless function) that calls a vision-capable model (e.g., GPT-4o / Gemini / Claude) to produce captions.
+                  This demo simulates that process in-browser while keeping the UI and UX identical.
+                </p>
+              </div>
+            </section>
+            {/* FAQ */}
+            <section id="faq" className="mt-12 sm:mt-16">
+              <h2 className="text-2xl sm:text-3xl font-semibold">FAQ</h2>
+              <div className="mt-6 grid lg:grid-cols-2 gap-4">
+                <div className="glass rounded-2xl p-5">
+                  <div className="text-sm font-semibold">Does it really use AI?</div>
+                  <p className="mt-2 text-sm text-zinc-300">This page simulates an AI API in the browser (including a 5–10s generation window). Swap in a real backend API to make it fully AI-powered.</p>
+                </div>
+                <div className="glass rounded-2xl p-5">
+                  <div className="text-sm font-semibold">What languages do I get?</div>
+                  <p className="mt-2 text-sm text-zinc-300">Each style includes three versions: English, Hinglish, and Hindi.</p>
+                </div>
+                <div className="glass rounded-2xl p-5">
+                  <div className="text-sm font-semibold">What image formats are supported?</div>
+                  <p className="mt-2 text-sm text-zinc-300">JPG and PNG.</p>
+                </div>
+                <div className="glass rounded-2xl p-5">
+                  <div className="text-sm font-semibold">Can I regenerate?</div>
+                  <p className="mt-2 text-sm text-zinc-300">Yes. Add an optional hint and hit Regenerate for more targeted captions.</p>
+                </div>
+              </div>
+            </section>
+            {/* CTA */}
+            <section className="mt-12 sm:mt-16">
+              <div className="glass rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                <div>
+                  <h2 className="text-2xl font-semibold">Ready to post?</h2>
+                  <p className="mt-2 text-zinc-300">Upload a photo, generate captions, and copy your favorite style.</p>
+                </div>
+                <a href="#generator" className="focus-ring inline-flex items-center justify-center rounded-2xl bg-white text-black px-6 py-3 text-sm font-semibold hover:bg-zinc-200 transition">Generate now</a>
+              </div>
+            </section>
+            <footer className="mt-10 sm:mt-14 pb-10 text-xs text-zinc-500">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <div>© <span id="year"></span> IG AI Caption Generator • Single-page demo</div>
+                <div className="text-zinc-600">Built with React (CDN) + Tailwind</div>
+              </div>
+            </footer>
+          </main>
+        </div>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    document.getElementById('year').textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
